@@ -32,4 +32,10 @@ app.get("/get-readings/:meterId", async (req, res) => {
   res.json(meterReadings);
 });
 
+app.delete("/clear-readings", async (req, res) => {
+  await Reading.deleteMany({});
+  res.send("All readings cleared!");
+});
+
+
 app.listen(5000, () => console.log("Server running on port 5000"));
