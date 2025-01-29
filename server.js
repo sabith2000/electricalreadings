@@ -6,10 +6,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect("mongodb://localhost:27017/electrical_readings", {
+mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalreadingsclust.nrix7.mongodb.net/?retryWrites=true&w=majority&appName=electricalreadingscluster", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-});
+})
+.then(() => console.log("Connected to MongoDB Atlas"))
+.catch(err => console.error("MongoDB connection error:", err));
 
 const ReadingSchema = new mongoose.Schema({
   meterId: String, // ID for each meter
