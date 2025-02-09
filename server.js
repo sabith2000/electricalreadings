@@ -15,17 +15,37 @@ mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalr
 
 const ReadingSchema = new mongoose.Schema({
   meterId: String, // ID for each meter
-  reading: Number, // Changed from String to Number for calculations
+  reading: String, 
   timestamp: { type: Date, default: Date.now },
 });
 
 const Reading = mongoose.model("Reading", ReadingSchema);
 
+const updateTimestamps = async () => {
+  const readings = await Reading.find();
+  for (const reading of readings) {
+    if (typeof reading.timestamp === "string") {
+      reading.timestamp = new Date(reading.timestamp); // Convert string to Date
+      await reading.save();
+    }
+  }
+  console.log("Timestamps updated!");
+};
+
+updateTimestamps();
+
+
 app.post("/add-reading", async (req, res) => {
-  const newReading = new Reading(req.body);
+  const newReading = new Reading({
+    meterId: req.body.meterId,
+    reading: req.body.reading,
+    timestamp: new Date(), // Store as Date
+  });
+
   await newReading.save();
   res.send("Reading saved!");
 });
+
 
 app.get("/get-readings/:meterId", async (req, res) => {
   const meterReadings = await Reading.find({ meterId: req.params.meterId }).sort({ timestamp: 1 });
