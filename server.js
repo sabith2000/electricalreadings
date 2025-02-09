@@ -46,9 +46,19 @@ const updateTimestamps = async () => {
   }
   console.log("Timestamps updated!");
 };
-
 updateTimestamps();
 
+const fixTimestamps = async () => {
+  const readings = await Reading.find();
+  for (const reading of readings) {
+    if (typeof reading.timestamp === "string") {
+      reading.timestamp = new Date(reading.timestamp); // Convert string to Date
+      await reading.save();
+    }
+  }
+  console.log("Timestamps updated to Date objects!");
+};
+fixTimestamps();
 
 app.post("/add-reading", async (req, res) => {
   const newReading = new Reading({
@@ -80,16 +90,22 @@ app.get("/total-usage/:meterId", async (req, res) => {
 app.get("/daily-usage/:meterId", async (req, res) => {
   const dailyUsage = await Reading.aggregate([
     { $match: { meterId: req.params.meterId } },
-    { $group: {
-        _id: { date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } } },
+    { 
+      $group: {
+        _id: { 
+          date: { 
+            $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } 
+          } 
+        },
         total: { $sum: "$reading" },
       } 
     },
     { $sort: { "_id.date": 1 } }
   ]);
-  console.log("Daily Usage Calculated:", dailyUsage); // Debugging
+  console.log("Daily Usage Data:", dailyUsage); // Debugging
   res.json(dailyUsage);
 });
+
 
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
