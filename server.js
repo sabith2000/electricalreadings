@@ -13,13 +13,28 @@ mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalr
 .then(() => console.log("Connected to MongoDB Atlas"))
 .catch(err => console.error("MongoDB connection error:", err));
 
+
 const ReadingSchema = new mongoose.Schema({
-  meterId: String, // ID for each meter
-  reading: String, 
+  meterId: String,
+  reading: Number,  // ✅ Change to Number
   timestamp: { type: Date, default: Date.now },
 });
 
+
 const Reading = mongoose.model("Reading", ReadingSchema);
+
+const fixReadingTypes = async () => {
+  const readings = await Reading.find();
+  for (const reading of readings) {
+    if (typeof reading.reading === "string") {
+      reading.reading = parseFloat(reading.reading); // Convert string to number
+      await reading.save();
+    }
+  }
+  console.log("Reading values updated to numbers!");
+};
+fixReadingTypes();
+
 
 const updateTimestamps = async () => {
   const readings = await Reading.find();
@@ -38,7 +53,7 @@ updateTimestamps();
 app.post("/add-reading", async (req, res) => {
   const newReading = new Reading({
     meterId: req.body.meterId,
-    reading: req.body.reading,
+    reading: parseFloat(req.body.reading),
     timestamp: new Date(), // Store as Date
   });
 
@@ -72,6 +87,7 @@ app.get("/daily-usage/:meterId", async (req, res) => {
     },
     { $sort: { "_id.date": 1 } }
   ]);
+  console.log("Daily Usage Calculated:", dailyUsage); // Debugging
   res.json(dailyUsage);
 });
 
