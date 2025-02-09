@@ -88,38 +88,66 @@ app.get("/total-usage/:meterId", async (req, res) => {
 
 // API to fetch daily usage per meter
 app.get("/daily-usage/:meterId", async (req, res) => {
-  const dailyUsage = await Reading.aggregate([
-    { $match: { meterId: req.params.meterId } },
-    { 
-      $group: {
-        _id: { 
-          date: { 
-            $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } 
-          } 
-        },
-        total: { $sum: "$reading" },
-      } 
-    },
-    { $sort: { "_id.date": 1 } }
-  ]);
-  console.log("Daily Usage Data:", dailyUsage); // Debugging
-  res.json(dailyUsage);
-});
+  try {
+    const dailyUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } }
+          },
+          firstReading: { $first: "$reading" }, // First reading of the day
+          lastReading: { $last: "$reading" } // Last reading of the day
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          totalUsage: { $subtract: [{ $toDouble: "$lastReading" }, { $toDouble: "$firstReading" }] }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ]);
 
+    console.log("Daily Usage Data:", dailyUsage);
+    res.json(dailyUsage);
+  } catch (error) {
+    console.error("Error fetching daily usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
-  const monthlyUsage = await Reading.aggregate([
-    { $match: { meterId: req.params.meterId } },
-    { $group: {
-        _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
-        total: { $sum: "$reading" },
-      }
-    },
-    { $sort: { "_id.month": 1 } }
-  ]);
-  res.json(monthlyUsage);
+  try {
+    const monthlyUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } },
+      {
+        $group: {
+          _id: {
+            month: { $dateToString: { format: "%Y-%m", date: "$timestamp", timezone: "Asia/Kolkata" } }
+          },
+          firstReading: { $first: "$reading" }, // First reading of the month
+          lastReading: { $last: "$reading" } // Last reading of the month
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          totalUsage: { $subtract: [{ $toDouble: "$lastReading" }, { $toDouble: "$firstReading" }] }
+        }
+      },
+      { $sort: { "_id": 1 } }
+    ]);
+
+    console.log("Monthly Usage Data:", monthlyUsage);
+    res.json(monthlyUsage);
+  } catch (error) {
+    console.error("Error fetching monthly usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
+
 
 app.delete("/clear-readings", async (req, res) => {
   await Reading.deleteMany({});
