@@ -10,8 +10,8 @@ mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalr
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log("Connected to MongoDB Atlas"))
-.catch(err => console.error("MongoDB connection error:", err));
+  .then(() => console.log("Connected to MongoDB Atlas"))
+  .catch(err => console.error("MongoDB connection error:", err));
 
 
 const ReadingSchema = new mongoose.Schema({
@@ -61,18 +61,19 @@ const fixTimestamps = async () => {
 fixTimestamps();
 
 app.post("/add-reading", async (req, res) => {
-  const now = new Date(); // Get current system time
-  const istTime = new Date(now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })); // ✅ Convert to IST
+  const now = new Date(); // Get current UTC time
+  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // ✅ Convert UTC to IST
 
   const newReading = new Reading({
     meterId: req.body.meterId,
     reading: req.body.reading,
-    timestamp: istTime, // ✅ Save as IST
+    timestamp: istTime, // ✅ Store time as IST
   });
 
   await newReading.save();
   res.send("Reading saved in IST!");
 });
+
 
 
 
@@ -96,17 +97,19 @@ app.get("/daily-usage/:meterId", async (req, res) => {
   try {
     const dailyUsage = await Reading.aggregate([
       { $match: { meterId: req.params.meterId } },
-      { $group: {
-          _id: { date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } } },
+      {
+        $group: {
+          _id: { date: { $dateToString: { format: "%d/%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
           firstReading: { $first: "$reading" }, // Get first reading of the day
           lastReading: { $last: "$reading" } // Get last reading of the day
         }
       },
-      { $project: {
+      {
+        $project: {
           _id: 1,
-          usage: { 
-            $cond: { 
-              if: { $eq: ["$firstReading", "$lastReading"] }, 
+          usage: {
+            $cond: {
+              if: { $eq: ["$firstReading", "$lastReading"] },
               then: "$firstReading", // First reading of the day → Just display it
               else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
             }
@@ -130,17 +133,19 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
   try {
     const monthlyUsage = await Reading.aggregate([
       { $match: { meterId: req.params.meterId } },
-      { $group: {
-          _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } }, // Group by Year-Month
+      {
+        $group: {
+          _id: { month: { $dateToString: { format: "%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
           firstReading: { $first: "$reading" }, // Get first reading of the month
           lastReading: { $last: "$reading" } // Get last reading of the month
         }
       },
-      { $project: {
+      {
+        $project: {
           _id: 1,
-          usage: { 
-            $cond: { 
-              if: { $eq: ["$firstReading", "$lastReading"] }, 
+          usage: {
+            $cond: {
+              if: { $eq: ["$firstReading", "$lastReading"] },
               then: "$firstReading", // First reading of the month → Just display it
               else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
             }
