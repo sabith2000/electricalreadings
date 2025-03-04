@@ -61,15 +61,21 @@ const fixTimestamps = async () => {
 fixTimestamps();
 
 app.post("/add-reading", async (req, res) => {
+  const now = new Date(); // Get current UTC time
+
+  // Convert UTC time to IST (UTC +5:30)
+  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+
   const newReading = new Reading({
     meterId: req.body.meterId,
-    reading: parseFloat(req.body.reading),
-    timestamp: new Date(), // Store as Date
+    reading: req.body.reading,
+    timestamp: istTime, // ✅ Stores date in IST
   });
 
   await newReading.save();
   res.send("Reading saved!");
 });
+
 
 
 app.get("/get-readings/:meterId", async (req, res) => {
