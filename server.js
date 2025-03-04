@@ -110,7 +110,7 @@ app.get("/daily-usage/:meterId", async (req, res) => {
           usage: {
             $cond: {
               if: { $eq: ["$firstReading", "$lastReading"] },
-              then: "$firstReading", // First reading of the day → Just display it
+              then: 0, // First reading of the day → Just display it
               else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
             }
           }
@@ -135,7 +135,10 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
       { $match: { meterId: req.params.meterId } },
       {
         $group: {
-          _id: { month: { $dateToString: { format: "%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
+          _id: {
+            year: { $year: { $add: ["$timestamp", 19800000] } }, // Extract Year
+            month: { $month: { $add: ["$timestamp", 19800000] } } // Extract Month (1-12)
+          },
           firstReading: { $first: "$reading" }, // Get first reading of the month
           lastReading: { $last: "$reading" } // Get last reading of the month
         }
@@ -146,7 +149,7 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
           usage: {
             $cond: {
               if: { $eq: ["$firstReading", "$lastReading"] },
-              then: "$firstReading", // First reading of the month → Just display it
+              then: 0, // First reading of the month → Just display it
               else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
             }
           }
@@ -154,8 +157,17 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
       },
       { $sort: { "_id.month": 1 } }
     ]);
+    const monthNames = [
+      "", "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
 
-    res.json(monthlyUsage);
+    const formattedMonthlyUsage = monthlyUsage.map(entry => ({
+      month: `${monthNames[entry._id.month]} ${entry._id.year}`, // ✅ Converts month number to name
+      usage: entry.usage
+    }));
+
+    res.json(formattedMonthlyUsage);
   } catch (error) {
     console.error("Error calculating monthly usage:", error);
     res.status(500).json({ error: "Internal server error" });
