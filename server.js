@@ -16,9 +16,10 @@ mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalr
 
 const ReadingSchema = new mongoose.Schema({
   meterId: String,
-  reading: Number,  // ✅ Change to Number
+  reading: { type: Number, required: true }, // ✅ Ensure reading is a Number
   timestamp: { type: Date, default: Date.now },
 });
+
 
 
 const Reading = mongoose.model("Reading", ReadingSchema);
@@ -85,38 +86,69 @@ app.get("/get-readings/:meterId", async (req, res) => {
 
 // API to fetch total usage per meter
 app.get("/total-usage/:meterId", async (req, res) => {
-  const totalUsage = await Reading.aggregate([
-    { $match: { meterId: req.params.meterId } },
-    { $group: { _id: "$meterId", total: { $sum: "$reading" } } },
-  ]);
-  res.json(totalUsage.length ? totalUsage[0] : { _id: req.params.meterId, total: 0 });
-});
-
-// API to fetch daily usage per meter
-app.get("/daily-usage/:meterId", async (req, res) => {
   try {
-    const dailyUsage = await Reading.aggregate([
-      { $match: { meterId: req.params.meterId } },
+    const totalUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } }, // ✅ Match readings for the meter
+      { $sort: { timestamp: 1 } }, // ✅ Ensure first & last readings are correct
       {
         $group: {
-          _id: { date: { $dateToString: { format: "%d/%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
-          firstReading: { $first: "$reading" }, // Get first reading of the day
-          lastReading: { $last: "$reading" } // Get last reading of the day
+          _id: "$meterId",
+          firstReading: { $first: "$reading" }, // ✅ First reading recorded for the meter
+          lastReading: { $last: "$reading" } // ✅ Last reading recorded for the meter
         }
       },
       {
         $project: {
           _id: 1,
+          firstReading: 1,
+          lastReading: 1,
+          totalUsage: {
+            $cond: {
+              if: { $eq: ["$firstReading", "$lastReading"] },
+              then: 0, // ✅ If only one reading exists, set to 0
+              else: { $subtract: ["$lastReading", "$firstReading"] } // ✅ Last - First
+            }
+          }
+        }
+      }
+    ]);
+
+    res.json(totalUsage.length ? totalUsage[0] : { _id: req.params.meterId, totalUsage: 0 });
+  } catch (error) {
+    console.error("Error calculating total usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+// API to fetch daily usage per meter
+app.get("/daily-usage/:meterId", async (req, res) => {
+  try {
+    const dailyUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } }, // ✅ Match the meter
+      { $sort: { timestamp: 1 } }, // ✅ Sort readings by timestamp to get correct first & last
+      {
+        $group: {
+          _id: { date: { $dateToString: { format: "%d/%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
+          firstReading: { $first: "$reading" }, // ✅ Get first reading of the day
+          lastReading: { $last: "$reading" } // ✅ Get last reading of the day
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          firstReading: 1,
+          lastReading: 1,
           usage: {
             $cond: {
               if: { $eq: ["$firstReading", "$lastReading"] },
-              then: 0, // First reading of the day → Just display it
-              else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
+              then: 0, // ✅ First reading of the day should be set to 0
+              else: { $subtract: ["$lastReading", "$firstReading"] } // ✅ Last - First
             }
           }
         }
       },
-      { $sort: { "_id.date": 1 } }
+      { $sort: { "_id.date": 1 } } // ✅ Ensure data is sorted by date
     ]);
 
     res.json(dailyUsage);
@@ -125,8 +157,6 @@ app.get("/daily-usage/:meterId", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-
 
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
