@@ -88,107 +88,38 @@ app.get("/total-usage/:meterId", async (req, res) => {
 
 // API to fetch daily usage per meter
 app.get("/daily-usage/:meterId", async (req, res) => {
-  try {
-    const dailyUsage = await Reading.aggregate([
-      { $match: { meterId: req.params.meterId } },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } }
-          },
-          firstReading: { $first: "$reading" }, // First reading of the day
-          lastReading: { $last: "$reading" } // Last reading of the day
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          totalUsage: { $subtract: [{ $toDouble: "$lastReading" }, { $toDouble: "$firstReading" }] }
-        }
-      },
-      { $sort: { "_id": 1 } }
-    ]);
-
-    console.log("Daily Usage Data:", dailyUsage);
-    res.json(dailyUsage);
-  } catch (error) {
-    console.error("Error fetching daily usage:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  const dailyUsage = await Reading.aggregate([
+    { $match: { meterId: req.params.meterId } },
+    { 
+      $group: {
+        _id: { 
+          date: { 
+            $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } 
+          } 
+        },
+        total: { $sum: "$reading" },
+      } 
+    },
+    { $sort: { "_id.date": 1 } }
+  ]);
+  console.log("Daily Usage Data:", dailyUsage); // Debugging
+  res.json(dailyUsage);
 });
+
 
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
-  try {
-    const monthlyUsage = await Reading.aggregate([
-      { $match: { meterId: req.params.meterId } },
-      {
-        $group: {
-          _id: {
-            month: { $dateToString: { format: "%Y-%m", date: "$timestamp", timezone: "Asia/Kolkata" } }
-          },
-          firstReading: { $first: "$reading" }, // First reading of the month
-          lastReading: { $last: "$reading" } // Last reading of the month
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          totalUsage: { $subtract: [{ $toDouble: "$lastReading" }, { $toDouble: "$firstReading" }] }
-        }
-      },
-      { $sort: { "_id": 1 } }
-    ]);
-
-    console.log("Monthly Usage Data:", monthlyUsage);
-    res.json(monthlyUsage);
-  } catch (error) {
-    console.error("Error fetching monthly usage:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.get("/usage-statement/:meterId", async (req, res) => {
-  try {
-    const { from, to } = req.query;
-    const meterId = req.params.meterId;
-
-    if (!from || !to) {
-      return res.status(400).json({ error: "Both 'from' and 'to' dates are required in YYYY-MM-DD format." });
-    }
-
-    const readings = await Reading.find({
-      meterId: meterId,
-      timestamp: {
-        $gte: new Date(`${from}T00:00:00.000Z`),
-        $lte: new Date(`${to}T23:59:59.999Z`),
+  const monthlyUsage = await Reading.aggregate([
+    { $match: { meterId: req.params.meterId } },
+    { $group: {
+        _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
+        total: { $sum: "$reading" },
       }
-    }).sort({ timestamp: 1 });
-
-    if (readings.length === 0) {
-      return res.json({ meterId, from, to, totalUsage: 0, message: "No data available in this range." });
-    }
-
-    const firstReading = parseFloat(readings[0].reading);
-    const lastReading = parseFloat(readings[readings.length - 1].reading);
-    const totalUsage = lastReading - firstReading;
-
-    const response = {
-      meterId,
-      from,
-      to,
-      totalUsage,
-      readings
-    };
-
-    console.log("Usage Statement Data:", response);
-    res.json(response);
-  } catch (error) {
-    console.error("Error fetching usage statement:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+    },
+    { $sort: { "_id.month": 1 } }
+  ]);
+  res.json(monthlyUsage);
 });
-
 
 app.delete("/clear-readings", async (req, res) => {
   await Reading.deleteMany({});
