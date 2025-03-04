@@ -61,20 +61,19 @@ const fixTimestamps = async () => {
 fixTimestamps();
 
 app.post("/add-reading", async (req, res) => {
-  const now = new Date(); // Get current UTC time
-
-  // Convert UTC time to IST (UTC +5:30)
-  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  const now = new Date(); // Get current system time
+  const istTime = new Date(now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })); // ✅ Convert to IST
 
   const newReading = new Reading({
     meterId: req.body.meterId,
     reading: req.body.reading,
-    timestamp: istTime, // ✅ Stores date in IST
+    timestamp: istTime, // ✅ Save as IST
   });
 
   await newReading.save();
-  res.send("Reading saved!");
+  res.send("Reading saved in IST!");
 });
+
 
 
 
@@ -94,38 +93,70 @@ app.get("/total-usage/:meterId", async (req, res) => {
 
 // API to fetch daily usage per meter
 app.get("/daily-usage/:meterId", async (req, res) => {
-  const dailyUsage = await Reading.aggregate([
-    { $match: { meterId: req.params.meterId } },
-    { 
-      $group: {
-        _id: { 
-          date: { 
-            $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "Asia/Kolkata" } 
-          } 
-        },
-        total: { $sum: "$reading" },
-      } 
-    },
-    { $sort: { "_id.date": 1 } }
-  ]);
-  console.log("Daily Usage Data:", dailyUsage); // Debugging
-  res.json(dailyUsage);
+  try {
+    const dailyUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } },
+      { $group: {
+          _id: { date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } } },
+          firstReading: { $first: "$reading" }, // Get first reading of the day
+          lastReading: { $last: "$reading" } // Get last reading of the day
+        }
+      },
+      { $project: {
+          _id: 1,
+          usage: { 
+            $cond: { 
+              if: { $eq: ["$firstReading", "$lastReading"] }, 
+              then: "$firstReading", // First reading of the day → Just display it
+              else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
+            }
+          }
+        }
+      },
+      { $sort: { "_id.date": 1 } }
+    ]);
+
+    res.json(dailyUsage);
+  } catch (error) {
+    console.error("Error calculating daily usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
+
 
 
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
-  const monthlyUsage = await Reading.aggregate([
-    { $match: { meterId: req.params.meterId } },
-    { $group: {
-        _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
-        total: { $sum: "$reading" },
-      }
-    },
-    { $sort: { "_id.month": 1 } }
-  ]);
-  res.json(monthlyUsage);
+  try {
+    const monthlyUsage = await Reading.aggregate([
+      { $match: { meterId: req.params.meterId } },
+      { $group: {
+          _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } }, // Group by Year-Month
+          firstReading: { $first: "$reading" }, // Get first reading of the month
+          lastReading: { $last: "$reading" } // Get last reading of the month
+        }
+      },
+      { $project: {
+          _id: 1,
+          usage: { 
+            $cond: { 
+              if: { $eq: ["$firstReading", "$lastReading"] }, 
+              then: "$firstReading", // First reading of the month → Just display it
+              else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
+            }
+          }
+        }
+      },
+      { $sort: { "_id.month": 1 } }
+    ]);
+
+    res.json(monthlyUsage);
+  } catch (error) {
+    console.error("Error calculating monthly usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
+
 
 app.delete("/clear-readings", async (req, res) => {
   await Reading.deleteMany({});
