@@ -61,28 +61,51 @@ const fixTimestamps = async () => {
 };
 fixTimestamps();
 
+const formatDate = (date, format = "DD/MM/YYYY HH:mm:ss") => {
+  const options = {
+    "DD/MM/YYYY HH:mm:ss": { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true },
+    "MM/DD/YYYY HH:mm:ss": { month: "2-digit", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }
+  };
+
+  return new Date(date).toLocaleString("en-IN", options[format] || options["DD/MM/YYYY HH:mm:ss"]);
+};
+
+
 app.post("/add-reading", async (req, res) => {
-  const now = new Date(); // Get current UTC time
-  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // ✅ Convert UTC to IST
+  try {
+    const newReading = new Reading({
+      meterId: req.body.meterId,
+      reading: req.body.reading,
+      timestamp: new Date(), // ✅ Directly store timestamp as MongoDB handles IST
+    });
 
-  const newReading = new Reading({
-    meterId: req.body.meterId,
-    reading: req.body.reading,
-    timestamp: istTime, // ✅ Store time as IST
-  });
-
-  await newReading.save();
-  res.send("Reading saved in IST!");
+    await newReading.save();
+    res.send("Reading saved!");
+  } catch (error) {
+    console.error("Error adding reading:", error);
+    res.status(500).json({ error: "Failed to save reading" });
+  }
 });
-
-
-
 
 
 app.get("/get-readings/:meterId", async (req, res) => {
-  const meterReadings = await Reading.find({ meterId: req.params.meterId }).sort({ timestamp: 1 });
-  res.json(meterReadings);
+  try {
+    const meterReadings = await Reading.find({ meterId: req.params.meterId }).sort({ timestamp: 1 });
+
+    // ✅ Apply formatDate function before sending response
+    const formattedReadings = meterReadings.map((reading) => ({
+      ...reading._doc,
+      timestamp: formatDate(reading.timestamp), // ✅ Format as "DD/MM/YYYY HH:mm:ss"
+    }));
+
+    res.json(formattedReadings);
+  } catch (error) {
+    console.error("Error fetching readings:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
+
+
 
 // API to fetch total usage per meter
 app.get("/total-usage/:meterId", async (req, res) => {
@@ -125,30 +148,29 @@ app.get("/total-usage/:meterId", async (req, res) => {
 app.get("/daily-usage/:meterId", async (req, res) => {
   try {
     const dailyUsage = await Reading.aggregate([
-      { $match: { meterId: req.params.meterId } }, // ✅ Match the meter
-      { $sort: { timestamp: 1 } }, // ✅ Sort readings by timestamp to get correct first & last
-      {
-        $group: {
-          _id: { date: { $dateToString: { format: "%d/%m/%Y", date: { $add: ["$timestamp", 19800000] } } } },
-          firstReading: { $first: "$reading" }, // ✅ Get first reading of the day
-          lastReading: { $last: "$reading" } // ✅ Get last reading of the day
+      { $match: { meterId: req.params.meterId } },
+      { $sort: { timestamp: 1 } },
+      { $group: {
+          _id: { date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } } }, // Store as YYYY-MM-DD for sorting
+          firstReading: { $first: "$reading" },
+          lastReading: { $last: "$reading" }
         }
       },
-      {
-        $project: {
+      { $project: {
           _id: 1,
           firstReading: 1,
           lastReading: 1,
-          usage: {
-            $cond: {
-              if: { $eq: ["$firstReading", "$lastReading"] },
-              then: 0, // ✅ First reading of the day should be set to 0
-              else: { $subtract: ["$lastReading", "$firstReading"] } // ✅ Last - First
+          formattedDate: { $dateToString: { format: "%d/%m/%Y", date: "$timestamp" } }, // ✅ Use preferred format
+          usage: { 
+            $cond: { 
+              if: { $eq: ["$firstReading", "$lastReading"] }, 
+              then: 0, 
+              else: { $subtract: ["$lastReading", "$firstReading"] }
             }
           }
         }
       },
-      { $sort: { "_id.date": 1 } } // ✅ Ensure data is sorted by date
+      { $sort: { "_id.date": 1 } }
     ]);
 
     res.json(dailyUsage);
@@ -158,43 +180,32 @@ app.get("/daily-usage/:meterId", async (req, res) => {
   }
 });
 
+
+
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
   try {
     const monthlyUsage = await Reading.aggregate([
       { $match: { meterId: req.params.meterId } },
-      {
-        $group: {
-          _id: {
-            year: { $year: { $add: ["$timestamp", 19800000] } }, // Extract Year
-            month: { $month: { $add: ["$timestamp", 19800000] } } // Extract Month (1-12)
-          },
-          firstReading: { $first: "$reading" }, // Get first reading of the month
-          lastReading: { $last: "$reading" } // Get last reading of the month
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          usage: {
-            $cond: {
-              if: { $eq: ["$firstReading", "$lastReading"] },
-              then: 0, // First reading of the month → Just display it
-              else: { $subtract: ["$lastReading", "$firstReading"] } // Last - First
-            }
-          }
+      { $sort: { timestamp: 1 } },
+      { $group: {
+          _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
+          firstReading: { $first: "$reading" },
+          lastReading: { $last: "$reading" }
         }
       },
       { $sort: { "_id.month": 1 } }
     ]);
+
     const monthNames = [
       "", "January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"
     ];
 
+    // ✅ Convert month number to month name
     const formattedMonthlyUsage = monthlyUsage.map(entry => ({
-      month: `${monthNames[entry._id.month]} ${entry._id.year}`, // ✅ Converts month number to name
-      usage: entry.usage
+      month: `${monthNames[parseInt(entry._id.month.split("-")[1])]} ${entry._id.month.split("-")[0]}`,
+      usage: entry.lastReading - entry.firstReading
     }));
 
     res.json(formattedMonthlyUsage);
@@ -203,6 +214,8 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+
 
 
 app.delete("/clear-readings", async (req, res) => {
