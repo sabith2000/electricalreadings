@@ -73,19 +73,25 @@ const formatDate = (date, format = "DD/MM/YYYY HH:mm:ss") => {
 
 app.post("/add-reading", async (req, res) => {
   try {
+    const now = new Date(); // Get current UTC time
+
+    // ✅ Convert UTC to IST manually (Add 5 hours 30 minutes)
+    const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+
     const newReading = new Reading({
       meterId: req.body.meterId,
       reading: req.body.reading,
-      timestamp: new Date(), // ✅ Directly store timestamp as MongoDB handles IST
+      timestamp: istTime, // ✅ Store IST timestamp in MongoDB
     });
 
     await newReading.save();
-    res.send("Reading saved!");
+    res.send("Reading saved with IST timestamp!");
   } catch (error) {
     console.error("Error adding reading:", error);
     res.status(500).json({ error: "Failed to save reading" });
   }
 });
+
 
 
 app.get("/get-readings/:meterId", async (req, res) => {
@@ -149,9 +155,11 @@ app.get("/daily-usage/:meterId", async (req, res) => {
   try {
     const dailyUsage = await Reading.aggregate([
       { $match: { meterId: req.params.meterId } },
-      { $sort: { timestamp: 1 } },
+      { $sort: { timestamp: 1 } }, // ✅ Ensure correct first & last readings
       { $group: {
-          _id: { date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } } }, // Store as YYYY-MM-DD for sorting
+          _id: { 
+            date: { $dateToString: { format: "%d/%m/%Y", date: "$timestamp" } } // ✅ Format as DD/MM/YYYY
+          },
           firstReading: { $first: "$reading" },
           lastReading: { $last: "$reading" }
         }
@@ -160,7 +168,7 @@ app.get("/daily-usage/:meterId", async (req, res) => {
           _id: 1,
           firstReading: 1,
           lastReading: 1,
-          formattedDate: { $dateToString: { format: "%d/%m/%Y", date: "$timestamp" } }, // ✅ Use preferred format
+          formattedDate: "$_id.date", // ✅ Ensure date is included
           usage: { 
             $cond: { 
               if: { $eq: ["$firstReading", "$lastReading"] }, 
@@ -182,13 +190,15 @@ app.get("/daily-usage/:meterId", async (req, res) => {
 
 
 
+
 // API to fetch monthly usage per meter
 app.get("/monthly-usage/:meterId", async (req, res) => {
   try {
     const monthlyUsage = await Reading.aggregate([
       { $match: { meterId: req.params.meterId } },
       { $sort: { timestamp: 1 } },
-      { $group: {
+      {
+        $group: {
           _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
           firstReading: { $first: "$reading" },
           lastReading: { $last: "$reading" }
