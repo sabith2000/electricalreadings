@@ -5,10 +5,12 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: "https://electrical-readings.netlify.app" }));
 app.use(express.json({ limit: "10kb" }));
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500
 }));
 
@@ -70,11 +72,18 @@ const formatDate = (date, format = "DD/MM/YYYY HH:mm:ss") => {
   return new Date(date).toLocaleString("en-IN", options[format] || options["DD/MM/YYYY HH:mm:ss"]);
 };
 
+// Add Reading with Validation
 app.post("/add-reading", async (req, res) => {
   try {
     const { meterId, reading } = req.body;
     if (!meterId || typeof reading !== "number" || reading < 0) {
       return res.status(400).json({ error: "Invalid input data" });
+    }
+
+    // Check last reading for this meter
+    const lastReading = await Reading.findOne({ meterId }).sort({ timestamp: -1 });
+    if (lastReading && reading < lastReading.reading) {
+      return res.status(400).json({ error: "New reading cannot be less than the last reading" });
     }
 
     const istTime = new Date(Date.now() + (5.5 * 60 * 60 * 1000));
@@ -122,15 +131,7 @@ app.get("/total-usage/:meterId", async (req, res) => {
       {
         $project: {
           _id: 1,
-          firstReading: 1,
-          lastReading: 1,
-          totalUsage: {
-            $cond: {
-              if: { $eq: ["$firstReading", "$lastReading"] },
-              then: 0,
-              else: { $subtract: ["$lastReading", "$firstReading"] }
-            }
-          }
+          totalUsage: { $subtract: ["$lastReading", "$firstReading"] }
         }
       }
     ]);
@@ -146,33 +147,31 @@ app.get("/daily-usage/:meterId", async (req, res) => {
     const { meterId } = req.params;
     if (!meterId) return res.status(400).json({ error: "Meter ID required" });
 
-    const dailyUsage = await Reading.aggregate([
-      { $match: { meterId } },
-      { $sort: { timestamp: 1 } },
-      {
-        $group: {
-          _id: { date: { $dateToString: { format: "%d/%m/%Y", date: "$timestamp" } } },
-          firstReading: { $first: "$reading" },
-          lastReading: { $last: "$reading" }
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          firstReading: 1,
-          lastReading: 1,
-          formattedDate: "$_id.date",
-          usage: {
-            $cond: {
-              if: { $eq: ["$firstReading", "$lastReading"] },
-              then: 0,
-              else: { $subtract: ["$lastReading", "$firstReading"] }
-            }
-          }
-        }
-      },
-      { $sort: { "_id.date": 1 } }
-    ]);
+    const readings = await Reading.find({ meterId }).sort({ timestamp: 1 });
+    if (!readings.length) return res.json([]);
+
+    const dailyUsage = [];
+    let previousReading = null;
+
+    for (const reading of readings) {
+      const date = reading.timestamp.toISOString().split("T")[0]; // YYYY-MM-DD
+      const currentDay = dailyUsage.find(d => d.date === date);
+
+      if (!currentDay) {
+        // First reading of the day
+        const usage = previousReading === null ? reading.reading : reading.reading - previousReading.reading;
+        dailyUsage.push({
+          date,
+          formattedDate: formatDate(reading.timestamp, "DD/MM/YYYY"),
+          usage: usage < 0 ? 0 : usage // Prevent negative usage
+        });
+      } else {
+        // Update last reading of the day
+        currentDay.usage = reading.reading - (previousReading ? previousReading.reading : 0);
+      }
+      previousReading = reading;
+    }
+
     res.json(dailyUsage);
   } catch (error) {
     console.error("Error calculating daily usage:", error);
@@ -185,31 +184,103 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
     const { meterId } = req.params;
     if (!meterId) return res.status(400).json({ error: "Meter ID required" });
 
-    const monthlyUsage = await Reading.aggregate([
+    const dailyUsage = await Reading.aggregate([
       { $match: { meterId } },
       { $sort: { timestamp: 1 } },
       {
         $group: {
-          _id: { month: { $dateToString: { format: "%Y-%m", date: "$timestamp" } } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
           firstReading: { $first: "$reading" },
           lastReading: { $last: "$reading" }
         }
       },
-      { $sort: { "_id.month": 1 } }
+      {
+        $project: {
+          date: "$_id",
+          usage: {
+            $cond: {
+              if: { $eq: ["$firstReading", "$lastReading"] },
+              then: "$firstReading", // First day reading if only one
+              else: { $subtract: ["$lastReading", "$firstReading"] }
+            }
+          }
+        }
+      }
     ]);
 
-    const monthNames = [
-      "", "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ];
+    const monthlyUsage = dailyUsage.reduce((acc, curr) => {
+      const [year, month] = curr.date.split("-");
+      const monthKey = `${year}-${month}`;
+      if (!acc[monthKey]) {
+        acc[monthKey] = { month: `${monthNames[parseInt(month)]} ${year}`, usage: 0 };
+      }
+      acc[monthKey].usage += curr.usage >= 0 ? curr.usage : 0; // Sum daily usage
+      return acc;
+    }, {});
 
-    const formattedMonthlyUsage = monthlyUsage.map(entry => ({
-      month: `${monthNames[parseInt(entry._id.month.split("-")[1])]} ${entry._id.month.split("-")[0]}`,
-      usage: entry.lastReading - entry.firstReading
-    }));
-    res.json(formattedMonthlyUsage);
+    res.json(Object.values(monthlyUsage));
   } catch (error) {
     console.error("Error calculating monthly usage:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/custom-range-usage/:meterId", async (req, res) => {
+  try {
+    const { meterId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    if (!meterId || !startDate || !endDate) {
+      return res.status(400).json({ error: "Meter ID, startDate, and endDate are required" });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start) || isNaN(end) || start > end) {
+      return res.status(400).json({ error: "Invalid date range" });
+    }
+
+    const readings = await Reading.find({
+      meterId,
+      timestamp: { $gte: start, $lte: end }
+    }).sort({ timestamp: 1 });
+
+    if (!readings.length) {
+      return res.json({ totalUsage: 0, dailyUsage: [] });
+    }
+
+    const dailyUsage = [];
+    let previousReading = null;
+
+    // Get the last reading before the range for accurate first day calculation
+    const preRangeReading = await Reading.findOne({
+      meterId,
+      timestamp: { $lt: start }
+    }).sort({ timestamp: -1 });
+
+    for (const reading of readings) {
+      const date = reading.timestamp.toISOString().split("T")[0];
+      const currentDay = dailyUsage.find(d => d.date === date);
+
+      if (!currentDay) {
+        const usage = previousReading === null
+          ? (preRangeReading ? reading.reading - preRangeReading.reading : reading.reading)
+          : reading.reading - previousReading.reading;
+        dailyUsage.push({
+          date,
+          formattedDate: formatDate(reading.timestamp, "DD/MM/YYYY"),
+          usage: usage < 0 ? 0 : usage
+        });
+      } else {
+        currentDay.usage = reading.reading - (previousReading ? previousReading.reading : (preRangeReading ? preRangeReading.reading : 0));
+      }
+      previousReading = reading;
+    }
+
+    const totalUsage = dailyUsage.reduce((sum, day) => sum + day.usage, 0);
+    res.json({ totalUsage, dailyUsage });
+  } catch (error) {
+    console.error("Error calculating custom range usage:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -223,5 +294,10 @@ app.delete("/clear-readings", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+const monthNames = [
+  "", "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
 
 app.listen(5000, () => console.log("Server running on port 5000"));
