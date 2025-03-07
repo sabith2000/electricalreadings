@@ -225,9 +225,6 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
   }
 });
 
-
-
-
 app.delete("/clear-readings", async (req, res) => {
   await Reading.deleteMany({});
   res.send("All readings cleared!");
