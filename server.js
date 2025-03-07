@@ -9,7 +9,7 @@ app.use(cors({ origin: "https://electrical-readings.netlify.app" }));
 app.use(express.json({ limit: "10kb" }));
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 500
 }));
 
 mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalreadingsclust.nrix7.mongodb.net/?retryWrites=true&w=majority&appName=electricalreadingscluster", {
