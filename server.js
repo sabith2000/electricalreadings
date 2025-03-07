@@ -5,11 +5,11 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 
-app.use(cors({ origin: "https://electricalreadings.onrender.com" })); // Replace with your actual frontend URL
+app.use(cors({ origin: "https://electricalreadings.onrender.com" }));
 app.use(express.json({ limit: "10kb" }));
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // Limit each IP to 100 requests
+  windowMs: 15 * 60 * 1000,
+  max: 100
 }));
 
 mongoose.connect("mongodb+srv://zeusolympusgreekgod:uB18zOP6Nm6paWbH@electricalreadingsclust.nrix7.mongodb.net/?retryWrites=true&w=majority&appName=electricalreadingscluster", {
