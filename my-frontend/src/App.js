@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
-import { FaSun, FaMoon, FaFilePdf, FaFileExcel, FaTrash, FaPlus, FaSpinner, FaBolt, FaCalendar, FaTimes } from "react-icons/fa";
+import * as XLSX from "xlsx";
+import { FaSun, FaMoon, FaFilePdf, FaFileExcel, FaTrash, FaPlus, FaSpinner, FaBolt, FaCalendar } from "react-icons/fa";
 import "./App.css";
 
 const App = () => {
@@ -17,15 +16,14 @@ const App = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // New state for custom range
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [customRangeData, setCustomRangeData] = useState({ totalUsage: 0, dailyUsage: [] });
 
   const toggleDarkMode = () => {
-    setTimeout(() => {
-      setDarkMode(!darkMode);
-      document.body.classList.toggle("dark-mode");
-    }, 100);
+    setDarkMode(!darkMode);
+    document.body.classList.toggle("dark-mode");
   };
 
   const fetchData = useCallback(async () => {
@@ -35,7 +33,8 @@ const App = () => {
       const response = await axios.get(`https://electricalreadings.onrender.com/get-readings/${meterId}`);
       setData(response.data || []);
     } catch (error) {
-      setError(`Failed to fetch readings: ${error.message}`);
+      console.error("Fetch error:", { message: error.message, status: error.response?.status });
+      setError(`Failed to fetch readings: ${error.message}.`);
     } finally {
       setLoading(false);
     }
@@ -56,7 +55,8 @@ const App = () => {
         setDailyUsage(dailyResponse.data || []);
         setMonthlyUsage(monthlyResponse.data || []);
       } catch (error) {
-        setError(`Failed to fetch analysis: ${error.message}`);
+        console.error("Analysis error:", { message: error.message, status: error.response?.status });
+        setError(`Failed to fetch analysis: ${error.message}.`);
       } finally {
         setLoading(false);
       }
@@ -80,17 +80,12 @@ const App = () => {
       });
       setCustomRangeData(response.data || { totalUsage: 0, dailyUsage: [] });
     } catch (error) {
-      setError(`Failed to fetch custom range: ${error.message}`);
+      console.error("Custom range error:", { message: error.message, status: error.response?.status });
+      setError(`Failed to fetch custom range data: ${error.message}.`);
     } finally {
       setLoading(false);
     }
   }, [meterId, startDate, endDate]);
-
-  const resetCustomRange = () => {
-    setStartDate("");
-    setEndDate("");
-    setCustomRangeData({ totalUsage: 0, dailyUsage: [] });
-  };
 
   useEffect(() => {
     fetchData();
@@ -105,7 +100,7 @@ const App = () => {
     setDailyUsage([]);
     setMonthlyUsage([]);
     setTotalUsage(0);
-    setCustomRangeData({ totalUsage: 0, dailyUsage: [] });
+    setCustomRangeData({ totalUsage: 0, dailyUsage: [] }); // Reset custom range
   };
 
   const handleExportToPDF = async () => {
@@ -129,17 +124,10 @@ const App = () => {
     try {
       setLoading(true);
       setError(null);
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Meter Readings");
-      worksheet.columns = [
-        { header: "Meter ID", key: "meterId", width: 15 },
-        { header: "Reading", key: "reading", width: 15 },
-        { header: "Timestamp", key: "timestamp", width: 25 }
-      ];
-      worksheet.addRows(data);
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      saveAs(blob, "meter_readings.xlsx");
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Meter Readings");
+      XLSX.writeFile(workbook, "meter_readings.xlsx");
     } catch (error) {
       setError("Failed to export Excel.");
     } finally {
@@ -160,7 +148,7 @@ const App = () => {
         reading: Number(reading),
       });
       setReading("");
-      await Promise.all([fetchData(), debouncedFetchAnalysis()]);
+      await Promise.all([fetchData(), debouncedFetchAnalysis()()]);
     } catch (error) {
       setError(error.response?.data?.error || "Failed to add reading.");
     } finally {
@@ -185,8 +173,6 @@ const App = () => {
     }
   };
 
-  const dismissError = () => setError(null);
-
   return (
     <div className={`container ${darkMode ? "dark-mode" : "light-mode"}`}>
       <div className="header">
@@ -196,39 +182,22 @@ const App = () => {
         </button>
       </div>
 
-      {error && (
-        <div className="error">
-          {error} <button className="dismiss-btn" onClick={dismissError}><FaTimes /></button>
-        </div>
-      )}
-
+      {error && <div className="error">{error}</div>}
+      
       <div className="input-section">
-        <div className="input-group">
-          <label htmlFor="meterId">Meter:</label>
-          <select
-            id="meterId"
-            className="modern-dropdown"
-            value={meterId}
-            onChange={handleMeterChange}
-            disabled={loading}
-          >
-            <option value="Meter 1">Meter 1</option>
-            <option value="Meter 2">Meter 2</option>
-            <option value="Meter 3">Meter 3</option>
-          </select>
-        </div>
-        <div className="input-group">
-          <label htmlFor="reading">Reading:</label>
-          <input
-            id="reading"
-            className="modern-input"
-            type="number"
-            value={reading}
-            onChange={(e) => setReading(e.target.value)}
-            placeholder="Enter Reading"
-            disabled={loading}
-          />
-        </div>
+        <select className="modern-dropdown" value={meterId} onChange={handleMeterChange} disabled={loading}>
+          <option value="Meter 1">Meter 1</option>
+          <option value="Meter 2">Meter 2</option>
+          <option value="Meter 3">Meter 3</option>
+        </select>
+        <input
+          className="modern-input"
+          type="number"
+          value={reading}
+          onChange={(e) => setReading(e.target.value)}
+          placeholder="Enter Reading"
+          disabled={loading}
+        />
         <button className="btn modern-btn btn-primary" onClick={handleAddReading} disabled={loading}>
           {loading ? <FaSpinner className="spin" /> : <FaPlus />} Add
         </button>
@@ -327,35 +296,25 @@ const App = () => {
           </table>
         </div>
 
+        {/* Custom Range Section */}
         <h3>Custom Range Usage <FaCalendar /></h3>
         <div className="input-section">
-          <div className="input-group">
-            <label htmlFor="startDate">Start Date:</label>
-            <input
-              id="startDate"
-              type="date"
-              className="modern-input"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={loading}
-            />
-          </div>
-          <div className="input-group">
-            <label htmlFor="endDate">End Date:</label>
-            <input
-              id="endDate"
-              type="date"
-              className="modern-input"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={loading}
-            />
-          </div>
+          <input
+            type="date"
+            className="modern-input"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            disabled={loading}
+          />
+          <input
+            type="date"
+            className="modern-input"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            disabled={loading}
+          />
           <button className="btn modern-btn btn-primary" onClick={fetchCustomRange} disabled={loading}>
             {loading ? <FaSpinner className="spin" /> : "Fetch"}
-          </button>
-          <button className="btn modern-btn btn-secondary" onClick={resetCustomRange} disabled={loading}>
-            Reset
           </button>
         </div>
         <div className="stats-card">
