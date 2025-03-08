@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
+// client/src/App.js
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx"; // Using xlsx as per your latest code
 import { FaSun, FaMoon, FaFilePdf, FaFileExcel, FaTrash, FaPlus, FaSpinner, FaBolt, FaCalendar } from "react-icons/fa";
 import "./App.css";
 
@@ -16,7 +17,6 @@ const App = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  // New state for custom range
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [customRangeData, setCustomRangeData] = useState({ totalUsage: 0, dailyUsage: [] });
@@ -26,7 +26,7 @@ const App = () => {
     document.body.classList.toggle("dark-mode");
   };
 
-  const fetchData = useCallback(async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -38,9 +38,9 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, [meterId]);
+  };
 
-  const debouncedFetchAnalysis = useCallback(() => {
+  const debouncedFetchAnalysis = () => {
     let timeout;
     const fetch = async () => {
       try {
@@ -65,9 +65,9 @@ const App = () => {
       clearTimeout(timeout);
       timeout = setTimeout(fetch, 1000);
     };
-  }, [meterId]);
+  };
 
-  const fetchCustomRange = useCallback(async () => {
+  const fetchCustomRange = async () => {
     if (!startDate || !endDate) {
       setError("Please select both start and end dates.");
       return;
@@ -85,13 +85,13 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, [meterId, startDate, endDate]);
+  };
 
   useEffect(() => {
     fetchData();
     const debouncedCall = debouncedFetchAnalysis();
     debouncedCall();
-  }, [fetchData, debouncedFetchAnalysis]);
+  }, [meterId]); // Simplified dependency array
 
   const handleMeterChange = (e) => {
     const newMeter = e.target.value;
@@ -100,7 +100,7 @@ const App = () => {
     setDailyUsage([]);
     setMonthlyUsage([]);
     setTotalUsage(0);
-    setCustomRangeData({ totalUsage: 0, dailyUsage: [] }); // Reset custom range
+    setCustomRangeData({ totalUsage: 0, dailyUsage: [] });
   };
 
   const handleExportToPDF = async () => {
@@ -296,7 +296,6 @@ const App = () => {
           </table>
         </div>
 
-        {/* Custom Range Section */}
         <h3>Custom Range Usage <FaCalendar /></h3>
         <div className="input-section">
           <input
