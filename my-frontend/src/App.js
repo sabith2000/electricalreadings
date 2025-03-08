@@ -1,9 +1,9 @@
-// client/src/App.js
+// my-frontend/src/App.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import * as XLSX from "xlsx"; // Using xlsx as per your latest code
+import * as XLSX from "xlsx"; // Using xlsx for Excel export
 import { FaSun, FaMoon, FaFilePdf, FaFileExcel, FaTrash, FaPlus, FaSpinner, FaBolt, FaCalendar } from "react-icons/fa";
 import "./App.css";
 
@@ -91,7 +91,7 @@ const App = () => {
     fetchData();
     const debouncedCall = debouncedFetchAnalysis();
     debouncedCall();
-  }, [meterId]); // Simplified dependency array
+  }, [meterId]);
 
   const handleMeterChange = (e) => {
     const newMeter = e.target.value;
