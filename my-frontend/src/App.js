@@ -16,7 +16,6 @@ const App = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  // New state for custom range
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [customRangeData, setCustomRangeData] = useState({ totalUsage: 0, dailyUsage: [] });
@@ -100,7 +99,7 @@ const App = () => {
     setDailyUsage([]);
     setMonthlyUsage([]);
     setTotalUsage(0);
-    setCustomRangeData({ totalUsage: 0, dailyUsage: [] }); // Reset custom range
+    setCustomRangeData({ totalUsage: 0, dailyUsage: [] });
   };
 
   const handleExportToPDF = async () => {
@@ -148,7 +147,7 @@ const App = () => {
         reading: Number(reading),
       });
       setReading("");
-      await Promise.all([fetchData(), debouncedFetchAnalysis()()]);
+      await Promise.all([fetchData(), debouncedFetchAnalysis()]);
     } catch (error) {
       setError(error.response?.data?.error || "Failed to add reading.");
     } finally {
@@ -296,7 +295,6 @@ const App = () => {
           </table>
         </div>
 
-        {/* Custom Range Section */}
         <h3>Custom Range Usage <FaCalendar /></h3>
         <div className="input-section">
           <input

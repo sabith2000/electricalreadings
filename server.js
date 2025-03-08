@@ -80,7 +80,6 @@ app.post("/add-reading", async (req, res) => {
       return res.status(400).json({ error: "Invalid input data" });
     }
 
-    // Check last reading for this meter
     const lastReading = await Reading.findOne({ meterId }).sort({ timestamp: -1 });
     if (lastReading && reading < lastReading.reading) {
       return res.status(400).json({ error: "New reading cannot be less than the last reading" });
@@ -154,19 +153,17 @@ app.get("/daily-usage/:meterId", async (req, res) => {
     let previousReading = null;
 
     for (const reading of readings) {
-      const date = reading.timestamp.toISOString().split("T")[0]; // YYYY-MM-DD
+      const date = reading.timestamp.toISOString().split("T")[0];
       const currentDay = dailyUsage.find(d => d.date === date);
 
       if (!currentDay) {
-        // First reading of the day
         const usage = previousReading === null ? reading.reading : reading.reading - previousReading.reading;
         dailyUsage.push({
           date,
           formattedDate: formatDate(reading.timestamp, "DD/MM/YYYY"),
-          usage: usage < 0 ? 0 : usage // Prevent negative usage
+          usage: usage < 0 ? 0 : usage
         });
       } else {
-        // Update last reading of the day
         currentDay.usage = reading.reading - (previousReading ? previousReading.reading : 0);
       }
       previousReading = reading;
@@ -200,7 +197,7 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
           usage: {
             $cond: {
               if: { $eq: ["$firstReading", "$lastReading"] },
-              then: "$firstReading", // First day reading if only one
+              then: "$firstReading",
               else: { $subtract: ["$lastReading", "$firstReading"] }
             }
           }
@@ -214,7 +211,7 @@ app.get("/monthly-usage/:meterId", async (req, res) => {
       if (!acc[monthKey]) {
         acc[monthKey] = { month: `${monthNames[parseInt(month)]} ${year}`, usage: 0 };
       }
-      acc[monthKey].usage += curr.usage >= 0 ? curr.usage : 0; // Sum daily usage
+      acc[monthKey].usage += curr.usage >= 0 ? curr.usage : 0;
       return acc;
     }, {});
 
@@ -252,7 +249,6 @@ app.get("/custom-range-usage/:meterId", async (req, res) => {
     const dailyUsage = [];
     let previousReading = null;
 
-    // Get the last reading before the range for accurate first day calculation
     const preRangeReading = await Reading.findOne({
       meterId,
       timestamp: { $lt: start }
